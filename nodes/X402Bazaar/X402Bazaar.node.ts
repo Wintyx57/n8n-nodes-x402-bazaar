@@ -189,6 +189,7 @@ export class X402Bazaar implements INodeType {
 		defaults: {
 			name: 'x402 Bazaar',
 		},
+		usableAsTool: true,
 		inputs: ['main'],
 		outputs: ['main'],
 		credentials: [
