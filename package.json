@@ -1,6 +1,6 @@
 {
-  "name": "n8n-nodes-x402-bazaar",
-  "version": "1.0.0",
+  "name": "@wintyx/n8n-nodes-x402-bazaar",
+  "version": "1.1.0",
   "description": "n8n community node for x402 Bazaar — access 70+ APIs with automatic USDC payments on Base or SKALE",
   "keywords": [
     "n8n-community-node-package",
@@ -26,8 +26,7 @@
   },
   "main": "dist/nodes/X402Bazaar/X402Bazaar.node.js",
   "scripts": {
-    "build": "tsc && npm run copy-icons",
-    "copy-icons": "copyfiles -f nodes/X402Bazaar/x402-bazaar.svg dist/nodes/X402Bazaar/",
+    "build": "node esbuild.config.mjs",
     "dev": "tsc --watch",
     "prepublishOnly": "npm run build"
   },
@@ -43,17 +42,15 @@
       "dist/credentials/X402BazaarCredentials.credentials.js"
     ]
   },
-  "dependencies": {
-    "viem": "^2.21.0"
-  },
   "peerDependencies": {
     "n8n-workflow": "*"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "copyfiles": "^2.4.1",
+    "esbuild": "^0.27.3",
     "n8n-workflow": "^1.64.0",
-    "typescript": "~5.5.0"
+    "typescript": "~5.5.0",
+    "viem": "^2.21.0"
   },
   "engines": {
     "node": ">=18"

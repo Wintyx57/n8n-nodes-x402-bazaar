@@ -4,7 +4,7 @@
 
 Access **70+ APIs** directly from your n8n workflows with automatic on-chain USDC payments on **Base** or **SKALE Europa** (zero gas).
 
-[![npm](https://img.shields.io/npm/v/x402-bazaar-n8n)](https://www.npmjs.com/package/x402-bazaar-n8n)
+[![npm](https://img.shields.io/npm/v/@wintyx/n8n-nodes-x402-bazaar)](https://www.npmjs.com/package/@wintyx/n8n-nodes-x402-bazaar)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ## Installation
@@ -13,14 +13,14 @@ Access **70+ APIs** directly from your n8n workflows with automatic on-chain USD
 
 1. Go to **Settings > Community Nodes** in your n8n instance
 2. Select **Install**
-3. Enter `x402-bazaar-n8n`
+3. Enter `@wintyx/n8n-nodes-x402-bazaar`
 4. Agree to the risks and click **Install**
 
 ### Manual Installation
 
 ```bash
 cd ~/.n8n/nodes
-npm install x402-bazaar-n8n
+npm install @wintyx/n8n-nodes-x402-bazaar
 ```
 
 Then restart n8n.
