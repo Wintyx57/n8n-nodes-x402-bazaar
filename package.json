@@ -1,0 +1,61 @@
+{
+  "name": "n8n-nodes-x402-bazaar",
+  "version": "1.0.0",
+  "description": "n8n community node for x402 Bazaar — access 70+ APIs with automatic USDC payments on Base or SKALE",
+  "keywords": [
+    "n8n-community-node-package",
+    "x402",
+    "bazaar",
+    "usdc",
+    "api-marketplace",
+    "blockchain",
+    "base",
+    "skale",
+    "ai-agent",
+    "crypto-payments"
+  ],
+  "license": "MIT",
+  "homepage": "https://x402bazaar.org",
+  "author": {
+    "name": "x402 Bazaar",
+    "email": "contact.x402bazaar@gmail.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Wintyx57/n8n-nodes-x402-bazaar"
+  },
+  "main": "dist/nodes/X402Bazaar/X402Bazaar.node.js",
+  "scripts": {
+    "build": "tsc && npm run copy-icons",
+    "copy-icons": "copyfiles -f nodes/X402Bazaar/x402-bazaar.svg dist/nodes/X402Bazaar/",
+    "dev": "tsc --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "files": [
+    "dist"
+  ],
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "nodes": [
+      "dist/nodes/X402Bazaar/X402Bazaar.node.js"
+    ],
+    "credentials": [
+      "dist/credentials/X402BazaarCredentials.credentials.js"
+    ]
+  },
+  "dependencies": {
+    "viem": "^2.21.0"
+  },
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "copyfiles": "^2.4.1",
+    "n8n-workflow": "^1.64.0",
+    "typescript": "~5.5.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

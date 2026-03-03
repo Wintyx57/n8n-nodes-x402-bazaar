@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 60" fill="none">
+  <rect width="60" height="60" rx="12" fill="#1a1a2e"/>
+  <rect x="2" y="2" width="56" height="56" rx="10" fill="url(#grad)" stroke="#6366f1" stroke-width="1.5"/>
+  <defs>
+    <linearGradient id="grad" x1="0" y1="0" x2="60" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1e1b4b"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+  </defs>
+  <text x="30" y="26" text-anchor="middle" font-family="monospace" font-weight="bold" font-size="13" fill="#818cf8">x402</text>
+  <text x="30" y="43" text-anchor="middle" font-family="sans-serif" font-weight="600" font-size="10" fill="#c4b5fd">BAZAAR</text>
+  <circle cx="48" cy="12" r="5" fill="#22c55e" opacity="0.9"/>
+  <path d="M46 12l1.5 1.5 3-3" stroke="white" stroke-width="1.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
