@@ -1,6 +1,6 @@
 {
   "name": "@wintyx/n8n-nodes-x402-bazaar",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "n8n community node for x402 Bazaar — access 70+ APIs with automatic USDC payments on Base or SKALE",
   "keywords": [
     "n8n-community-node-package",
