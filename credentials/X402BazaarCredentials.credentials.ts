@@ -32,9 +32,9 @@ export class X402BazaarCredentials implements ICredentialType {
 					description: 'Base L2 — ~$0.001 gas per transaction',
 				},
 				{
-					name: 'SKALE Europa (Zero Gas)',
+					name: 'SKALE on Base (Ultra-low Gas)',
 					value: 'skale',
-					description: 'SKALE Europa Hub — zero gas fees (uses sFUEL)',
+					description: 'SKALE on Base — ultra-low gas fees (~$0.0007/tx via CREDITS)',
 				},
 			],
 			default: 'base',
