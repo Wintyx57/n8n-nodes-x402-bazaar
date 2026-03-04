@@ -230,6 +230,12 @@ export class X402Bazaar implements INodeType {
 						description: 'Get detailed information about a specific API service',
 						action: 'Get service details',
 					},
+					{
+						name: 'Register Service',
+						value: 'registerService',
+						description: 'Register your API on the x402 Bazaar marketplace (1 USDC)',
+						action: 'Register a new service on the marketplace',
+					},
 				],
 				default: 'callApi',
 			},
@@ -347,6 +353,81 @@ export class X402Bazaar implements INodeType {
 					show: { operation: ['getServiceInfo'] },
 				},
 				description: 'Select the service to get information about',
+			},
+
+			// ── Register Service: Fields ──
+			{
+				displayName: 'Service Name',
+				name: 'serviceName',
+				type: 'string',
+				required: true,
+				default: '',
+				displayOptions: {
+					show: { operation: ['registerService'] },
+				},
+				placeholder: 'My Weather API',
+				description: 'Name of the API service to register on the marketplace',
+			},
+			{
+				displayName: 'Service URL',
+				name: 'serviceUrl',
+				type: 'string',
+				required: true,
+				default: '',
+				displayOptions: {
+					show: { operation: ['registerService'] },
+				},
+				placeholder: 'https://api.example.com/weather',
+				description: 'Full URL of your API endpoint (must be HTTP or HTTPS)',
+			},
+			{
+				displayName: 'Price (USDC)',
+				name: 'servicePrice',
+				type: 'number',
+				required: true,
+				default: 0.01,
+				displayOptions: {
+					show: { operation: ['registerService'] },
+				},
+				typeOptions: {
+					minValue: 0,
+					maxValue: 1000,
+					numberPrecision: 4,
+				},
+				description: 'Price per API call in USDC (0-1000)',
+			},
+			{
+				displayName: 'Description',
+				name: 'serviceDescription',
+				type: 'string',
+				default: '',
+				displayOptions: {
+					show: { operation: ['registerService'] },
+				},
+				placeholder: 'Returns current weather data for any city worldwide',
+				description: 'Description of what your API does (max 1000 characters)',
+			},
+			{
+				displayName: 'Owner Address',
+				name: 'ownerAddress',
+				type: 'string',
+				default: '',
+				displayOptions: {
+					show: { operation: ['registerService'] },
+				},
+				placeholder: '0x...',
+				description: 'Ethereum wallet address that owns this service. Leave empty to use your wallet from credentials.',
+			},
+			{
+				displayName: 'Tags',
+				name: 'serviceTags',
+				type: 'string',
+				default: '',
+				displayOptions: {
+					show: { operation: ['registerService'] },
+				},
+				placeholder: 'weather, data, geo',
+				description: 'Comma-separated tags for your service (max 10 tags)',
 			},
 		],
 	};
@@ -674,6 +755,146 @@ export class X402Bazaar implements INodeType {
 						},
 						pairedItem: { item: i },
 					});
+				}
+
+				// ────────────────────────────────────────────
+				// REGISTER SERVICE
+				// ────────────────────────────────────────────
+				else if (operation === 'registerService') {
+					const serviceName = this.getNodeParameter('serviceName', i) as string;
+					const serviceUrl = this.getNodeParameter('serviceUrl', i) as string;
+					const servicePrice = this.getNodeParameter('servicePrice', i) as number;
+					let ownerAddress = this.getNodeParameter('ownerAddress', i, '') as string;
+					const serviceDescription = this.getNodeParameter('serviceDescription', i, '') as string;
+					const tagsRaw = this.getNodeParameter('serviceTags', i, '') as string;
+
+					// Derive owner address from credentials wallet if not provided
+					if (!ownerAddress) {
+						const account = privateKeyToAccount(privateKey as `0x${string}`);
+						ownerAddress = account.address;
+					}
+
+					// Parse comma-separated tags
+					const tags = tagsRaw
+						.split(',')
+						.map((t) => t.trim())
+						.filter((t) => t.length > 0)
+						.slice(0, 10);
+
+					const registerBody = {
+						name: serviceName,
+						url: serviceUrl,
+						price: servicePrice,
+						ownerAddress,
+						description: serviceDescription,
+						tags,
+					};
+
+					const account = privateKeyToAccount(privateKey as `0x${string}`);
+
+					// Step 1: Initial request → expect 402
+					const initialRes = (await this.helpers.httpRequest({
+						method: 'POST',
+						url: `${baseUrl}/register`,
+						headers: { 'X-Agent-Wallet': account.address },
+						body: registerBody,
+						json: true,
+						returnFullResponse: true,
+						ignoreHttpStatusErrors: true,
+					})) as { statusCode: number; body: Record<string, unknown> };
+
+					if (initialRes.statusCode === 402) {
+						const paymentDetails = initialRes.body?.payment_details as
+							| { amount: number; recipient: string }
+							| undefined;
+
+						if (!paymentDetails) {
+							throw new NodeOperationError(
+								this.getNode(),
+								'Registration: 402 response without payment_details',
+								{ itemIndex: i },
+							);
+						}
+
+						const amount = paymentDetails.amount;
+
+						// Budget guard
+						if (totalSpent + amount > maxBudget) {
+							throw new NodeOperationError(
+								this.getNode(),
+								`Budget exceeded: registration costs ${amount} USDC, but only ${(maxBudget - totalSpent).toFixed(4)} USDC remaining (max budget: ${maxBudget} USDC)`,
+								{ itemIndex: i },
+							);
+						}
+
+						// Step 2: Send USDC payment
+						const payment = await sendUsdcPayment(
+							privateKey,
+							network,
+							paymentDetails.recipient as Address,
+							amount,
+						);
+						totalSpent += amount;
+
+						// Step 3: Retry with payment proof
+						const paidRes = (await this.helpers.httpRequest({
+							method: 'POST',
+							url: `${baseUrl}/register`,
+							headers: {
+								'X-Agent-Wallet': account.address,
+								'X-Payment-TxHash': payment.txHash,
+								'X-Payment-Chain': network,
+							},
+							body: registerBody,
+							json: true,
+							returnFullResponse: true,
+							ignoreHttpStatusErrors: true,
+						})) as { statusCode: number; body: Record<string, unknown> };
+
+						if (paidRes.statusCode === 201 || paidRes.statusCode === 200) {
+							returnData.push({
+								json: {
+									...(paidRes.body as Record<string, unknown>),
+									_x402_payment: {
+										service: serviceName,
+										amount,
+										txHash: payment.txHash,
+										explorer: payment.explorer,
+										from: payment.from,
+										network,
+										totalSpent,
+										budgetRemaining: maxBudget - totalSpent,
+									},
+								},
+								pairedItem: { item: i },
+							});
+						} else {
+							throw new NodeOperationError(
+								this.getNode(),
+								`Registration failed after payment (HTTP ${paidRes.statusCode}): ${JSON.stringify(paidRes.body)}. Payment tx: ${payment.txHash}`,
+								{ itemIndex: i },
+							);
+						}
+					} else if (initialRes.statusCode === 400) {
+						// Validation error from backend
+						throw new NodeOperationError(
+							this.getNode(),
+							`Validation error: ${JSON.stringify(initialRes.body)}`,
+							{ itemIndex: i },
+						);
+					} else if (initialRes.statusCode === 201 || initialRes.statusCode === 200) {
+						// Registration without payment (unlikely but handle gracefully)
+						returnData.push({
+							json: initialRes.body as Record<string, unknown>,
+							pairedItem: { item: i },
+						});
+					} else {
+						throw new NodeOperationError(
+							this.getNode(),
+							`Registration error (HTTP ${initialRes.statusCode}): ${JSON.stringify(initialRes.body)}`,
+							{ itemIndex: i },
+						);
+					}
 				}
 			} catch (error) {
 				if (this.continueOnFail()) {
