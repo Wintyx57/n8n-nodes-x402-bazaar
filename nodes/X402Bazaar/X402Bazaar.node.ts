@@ -74,13 +74,16 @@ const USDC_ABI = [
 
 // ─── Payment Helpers ────────────────────────────────────────────────────────
 
-async function sendUsdcPayment(
+/**
+ * Internal helper: sends a USDC transfer with a raw BigInt amount (micro-USDC, 6 decimals).
+ * Used by both sendUsdcPayment (legacy) and sendSplitPayment (native split).
+ */
+async function _sendUsdcRaw(
 	privateKey: string,
-	network: string,
+	chainCfg: ChainConfig,
 	recipient: Address,
-	amountUsdc: number,
+	amountRaw: bigint,
 ): Promise<{ txHash: Hash; explorer: string; from: string }> {
-	const chainCfg = CHAINS[network] || CHAINS.base;
 	const account = privateKeyToAccount(privateKey as `0x${string}`);
 
 	const walletClient = createWalletClient({
@@ -94,8 +97,6 @@ async function sendUsdcPayment(
 		transport: http(chainCfg.rpcUrl),
 	});
 
-	const amount = parseUnits(amountUsdc.toString(), 6);
-
 	// Check balance first
 	const balance = await publicClient.readContract({
 		address: chainCfg.usdcContract,
@@ -104,9 +105,9 @@ async function sendUsdcPayment(
 		args: [account.address],
 	});
 
-	if (balance < amount) {
+	if (balance < amountRaw) {
 		throw new Error(
-			`Insufficient USDC balance: ${(Number(balance) / 1e6).toFixed(4)} available, ${amountUsdc} required on ${network}`,
+			`Insufficient USDC balance: ${(Number(balance) / 1e6).toFixed(4)} available, ${(Number(amountRaw) / 1e6).toFixed(4)} required`,
 		);
 	}
 
@@ -115,7 +116,7 @@ async function sendUsdcPayment(
 		address: chainCfg.usdcContract,
 		abi: USDC_ABI,
 		functionName: 'transfer',
-		args: [recipient, amount],
+		args: [recipient, amountRaw],
 		chain: null,
 	});
 
@@ -126,6 +127,84 @@ async function sendUsdcPayment(
 		txHash,
 		explorer: `${chainCfg.explorer}/tx/${txHash}`,
 		from: account.address,
+	};
+}
+
+/**
+ * Send a USDC payment expressed as a floating-point USDC amount.
+ * Used for legacy single-payment mode and registerService (listing fee 100% to platform).
+ */
+async function sendUsdcPayment(
+	privateKey: string,
+	network: string,
+	recipient: Address,
+	amountUsdc: number,
+): Promise<{ txHash: Hash; explorer: string; from: string }> {
+	const chainCfg = CHAINS[network] || CHAINS.base;
+	const amountRaw = parseUnits(amountUsdc.toString(), 6);
+	return _sendUsdcRaw(privateKey, chainCfg, recipient, amountRaw);
+}
+
+/**
+ * Result returned by sendSplitPayment.
+ */
+interface SplitPaymentResult {
+	txHashProvider: Hash;
+	txHashPlatform: Hash;
+	explorerProvider: string;
+	explorerPlatform: string;
+	from: string;
+	providerAmountUsdc: number;
+	platformAmountUsdc: number;
+}
+
+/**
+ * Native 95/5 split: sends two separate USDC transfers.
+ *   - Tx1: floor(total * 95 / 100) micro-USDC -> providerWallet
+ *   - Tx2: total - providerAmount micro-USDC   -> platformRecipient
+ *
+ * Uses BigInt integer arithmetic (6-decimal micro-USDC) to avoid floating-point
+ * rounding, matching the server-side formula exactly.
+ *
+ * NOTE: This operation is NOT atomic. If Tx1 succeeds but Tx2 fails, the caller
+ * should catch the error and send only X-Payment-TxHash-Provider; the backend
+ * will fall back to recording a pending_payout for the platform share.
+ */
+async function sendSplitPayment(
+	privateKey: string,
+	network: string,
+	providerWallet: Address,
+	platformRecipient: Address,
+	totalAmountUsdc: number,
+): Promise<SplitPaymentResult> {
+	const chainCfg = CHAINS[network] || CHAINS.base;
+
+	// Integer arithmetic in micro-USDC (6 decimals) mirrors the server-side formula
+	const totalRaw = parseUnits(totalAmountUsdc.toString(), 6);
+	const providerRaw = (totalRaw * 95n) / 100n;
+	const platformRaw = totalRaw - providerRaw;
+
+	// Guard: both sub-amounts must be non-zero (prices below ~0.0001 USDC are rejected)
+	if (providerRaw === 0n || platformRaw === 0n) {
+		throw new Error(
+			`Amount too small for split payment: ${totalAmountUsdc} USDC produces a zero sub-amount (minimum ~0.0001 USDC)`,
+		);
+	}
+
+	// Tx1: 95% to provider (mandatory)
+	const providerResult = await _sendUsdcRaw(privateKey, chainCfg, providerWallet, providerRaw);
+
+	// Tx2: 5% to platform
+	const platformResult = await _sendUsdcRaw(privateKey, chainCfg, platformRecipient, platformRaw);
+
+	return {
+		txHashProvider: providerResult.txHash,
+		txHashPlatform: platformResult.txHash,
+		explorerProvider: providerResult.explorer,
+		explorerPlatform: platformResult.explorer,
+		from: providerResult.from,
+		providerAmountUsdc: Number(providerRaw) / 1e6,
+		platformAmountUsdc: Number(platformRaw) / 1e6,
 	};
 }
 
@@ -548,7 +627,7 @@ export class X402Bazaar implements INodeType {
 					// Derive wallet address
 					const account = privateKeyToAccount(privateKey as `0x${string}`);
 
-					// Step 1: Initial request
+					// Step 1: Initial request (no payment header)
 					const initialResponse = await this.helpers.httpRequest({
 						method: method as 'GET' | 'POST',
 						url: fullUrl,
@@ -560,9 +639,21 @@ export class X402Bazaar implements INodeType {
 
 					// Step 2: Handle 402 — pay and retry
 					if (initialResponse.statusCode === 402) {
+						// payment_details may include split fields when the service has an
+						// external owner_address (payment_mode: "split_native").
 						const paymentDetails = (initialResponse.body as Record<string, unknown>)
 							?.payment_details as
-							| { amount: number; recipient: string }
+							| {
+									amount: number;
+									recipient: string;
+									// Split-mode fields (only present for external services)
+									provider_wallet?: string;
+									split?: {
+										provider_amount: number;
+										platform_amount: number;
+									};
+									payment_mode?: string;
+							  }
 							| undefined;
 
 						if (!paymentDetails) {
@@ -575,7 +666,7 @@ export class X402Bazaar implements INodeType {
 
 						const amount = paymentDetails.amount;
 
-						// Budget guard
+						// Budget guard (total amount is unchanged whether split or legacy)
 						if (totalSpent + amount > maxBudget) {
 							throw new NodeOperationError(
 								this.getNode(),
@@ -584,33 +675,111 @@ export class X402Bazaar implements INodeType {
 							);
 						}
 
-						// Send USDC on-chain
-						const payment = await sendUsdcPayment(
-							privateKey,
-							network,
-							paymentDetails.recipient as Address,
-							amount,
-						);
-						totalSpent += amount;
+						// ── Detect split mode ──────────────────────────────────
+						// The backend signals split mode via payment_mode: "split_native"
+						// and provider_wallet. Both must be present to enable split.
+						// Services without an owner_address use legacy mode (100% to platform).
+						const isSplitMode =
+							!!paymentDetails.provider_wallet &&
+							paymentDetails.payment_mode === 'split_native';
 
-						// Retry with payment proof
-						const paidResponse = await this.helpers.httpRequest({
-							method: method as 'GET' | 'POST',
-							url: fullUrl,
-							headers: {
-								'X-Agent-Wallet': account.address,
-								'X-Payment-TxHash': payment.txHash,
-								'X-Payment-Chain': network,
-							},
-							...(isPost ? { body: params, json: true } : { json: true }),
-							returnFullResponse: true,
-							ignoreHttpStatusErrors: true,
-						}) as { statusCode: number; body: Record<string, unknown> };
+						let paidResponse: { statusCode: number; body: Record<string, unknown> };
+						let paymentMeta: Record<string, unknown>;
+
+						if (isSplitMode) {
+							// ── Native split: 2 separate on-chain transactions ──────
+							// Tx1: 95% -> provider_wallet
+							// Tx2: 5%  -> recipient (platform wallet)
+							const providerWallet = paymentDetails.provider_wallet as Address;
+							const platformRecipient = paymentDetails.recipient as Address;
+
+							const split = await sendSplitPayment(
+								privateKey,
+								network,
+								providerWallet,
+								platformRecipient,
+								amount,
+							);
+							totalSpent += amount;
+
+							// Retry with both payment proofs in dedicated headers
+							paidResponse = (await this.helpers.httpRequest({
+								method: method as 'GET' | 'POST',
+								url: fullUrl,
+								headers: {
+									'X-Agent-Wallet': account.address,
+									'X-Payment-TxHash-Provider': split.txHashProvider,
+									'X-Payment-TxHash-Platform': split.txHashPlatform,
+									'X-Payment-Chain': network,
+								},
+								...(isPost ? { body: params, json: true } : { json: true }),
+								returnFullResponse: true,
+								ignoreHttpStatusErrors: true,
+							})) as { statusCode: number; body: Record<string, unknown> };
+
+							paymentMeta = {
+								service: svc.name,
+								amount,
+								paymentMode: 'split_native',
+								providerWallet,
+								platformRecipient,
+								providerAmount: split.providerAmountUsdc,
+								platformAmount: split.platformAmountUsdc,
+								txHashProvider: split.txHashProvider,
+								txHashPlatform: split.txHashPlatform,
+								explorerProvider: split.explorerProvider,
+								explorerPlatform: split.explorerPlatform,
+								from: split.from,
+								network,
+								totalSpent,
+								budgetRemaining: maxBudget - totalSpent,
+							};
+						} else {
+							// ── Legacy mode: single transaction to platform wallet ───
+							// Used for internal services (no owner_address) and any
+							// service where the backend does not send provider_wallet.
+							const payment = await sendUsdcPayment(
+								privateKey,
+								network,
+								paymentDetails.recipient as Address,
+								amount,
+							);
+							totalSpent += amount;
+
+							// Retry with payment proof
+							paidResponse = (await this.helpers.httpRequest({
+								method: method as 'GET' | 'POST',
+								url: fullUrl,
+								headers: {
+									'X-Agent-Wallet': account.address,
+									'X-Payment-TxHash': payment.txHash,
+									'X-Payment-Chain': network,
+								},
+								...(isPost ? { body: params, json: true } : { json: true }),
+								returnFullResponse: true,
+								ignoreHttpStatusErrors: true,
+							})) as { statusCode: number; body: Record<string, unknown> };
+
+							paymentMeta = {
+								service: svc.name,
+								amount,
+								paymentMode: 'legacy',
+								txHash: payment.txHash,
+								explorer: payment.explorer,
+								from: payment.from,
+								network,
+								totalSpent,
+								budgetRemaining: maxBudget - totalSpent,
+							};
+						}
 
 						if (paidResponse.statusCode !== 200) {
+							const txRef = isSplitMode
+								? `provider_tx: ${paymentMeta.txHashProvider as string}`
+								: `tx: ${paymentMeta.txHash as string}`;
 							throw new NodeOperationError(
 								this.getNode(),
-								`${svc.name} returned ${paidResponse.statusCode} after payment (tx: ${payment.txHash})`,
+								`${svc.name} returned ${paidResponse.statusCode} after payment (${txRef})`,
 								{ itemIndex: i },
 							);
 						}
@@ -618,16 +787,7 @@ export class X402Bazaar implements INodeType {
 						returnData.push({
 							json: {
 								...(paidResponse.body as Record<string, unknown>),
-								_x402_payment: {
-									service: svc.name,
-									amount,
-									txHash: payment.txHash,
-									explorer: payment.explorer,
-									from: payment.from,
-									network,
-									totalSpent,
-									budgetRemaining: maxBudget - totalSpent,
-								},
+								_x402_payment: paymentMeta,
 							},
 							pairedItem: { item: i },
 						});
@@ -760,6 +920,8 @@ export class X402Bazaar implements INodeType {
 				// ────────────────────────────────────────────
 				// REGISTER SERVICE
 				// ────────────────────────────────────────────
+				// Registration uses legacy mode (1 USDC listing fee 100% to platform).
+				// No split applies here: the fee is a platform listing fee, not a service call.
 				else if (operation === 'registerService') {
 					const serviceName = this.getNodeParameter('serviceName', i) as string;
 					const serviceUrl = this.getNodeParameter('serviceUrl', i) as string;
@@ -792,7 +954,7 @@ export class X402Bazaar implements INodeType {
 
 					const account = privateKeyToAccount(privateKey as `0x${string}`);
 
-					// Step 1: Initial request → expect 402
+					// Step 1: Initial request -> expect 402
 					const initialRes = (await this.helpers.httpRequest({
 						method: 'POST',
 						url: `${baseUrl}/register`,
@@ -827,7 +989,7 @@ export class X402Bazaar implements INodeType {
 							);
 						}
 
-						// Step 2: Send USDC payment
+						// Step 2: Send USDC payment (legacy — 100% listing fee to platform)
 						const payment = await sendUsdcPayment(
 							privateKey,
 							network,
@@ -858,6 +1020,7 @@ export class X402Bazaar implements INodeType {
 									_x402_payment: {
 										service: serviceName,
 										amount,
+										paymentMode: 'legacy',
 										txHash: payment.txHash,
 										explorer: payment.explorer,
 										from: payment.from,
