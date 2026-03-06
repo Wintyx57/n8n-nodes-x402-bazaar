@@ -36,16 +36,16 @@ const CHAINS: Record<string, ChainConfig> = {
 		viemChain: base,
 	},
 	skale: {
-		rpcUrl: 'https://mainnet.skalenodes.com/v1/elated-tan-skat',
-		usdcContract: '0x5F795bb52dAc3085f578f4877D450e2929D2F13d',
-		explorer: 'https://elated-tan-skat.explorer.mainnet.skalenodes.com',
+		rpcUrl: 'https://skale-base.skalenodes.com/v1/base',
+		usdcContract: '0x85889c8c714505E0c94b30fcfcF64fE3Ac8FCb20',
+		explorer: 'https://skale-base-explorer.skalenodes.com',
 		viemChain: {
-			id: 2046399126,
-			name: 'SKALE Europa Hub',
-			nativeCurrency: { name: 'sFUEL', symbol: 'sFUEL', decimals: 18 },
+			id: 1187947933,
+			name: 'SKALE on Base',
+			nativeCurrency: { name: 'CREDITS', symbol: 'CREDITS', decimals: 18 },
 			rpcUrls: {
 				default: {
-					http: ['https://mainnet.skalenodes.com/v1/elated-tan-skat'],
+					http: ['https://skale-base.skalenodes.com/v1/base'],
 				},
 			},
 		},
@@ -230,7 +230,7 @@ async function getUsdcBalance(
 	return {
 		balance: Number(balance) / 1e6,
 		address: account.address,
-		network: chainCfg === CHAINS.skale ? 'SKALE Europa' : 'Base',
+		network: chainCfg === CHAINS.skale ? 'SKALE on Base' : 'Base',
 	};
 }
 
@@ -523,11 +523,13 @@ export class X402Bazaar implements INodeType {
 					(credentials.baseUrl as string) || 'https://x402-api.onrender.com'
 				).replace(/\/$/, '');
 
-				const services = (await this.helpers.httpRequest({
+				const servicesRaw = (await this.helpers.httpRequest({
 					method: 'GET',
 					url: `${baseUrl}/api/services`,
 					json: true,
-				})) as Array<{
+				})) as unknown;
+
+				const services: Array<{
 					name: string;
 					url: string;
 					price_usdc: number;
@@ -535,7 +537,9 @@ export class X402Bazaar implements INodeType {
 					method?: string;
 					verified_status?: string;
 					description?: string;
-				}>;
+				}> = Array.isArray(servicesRaw)
+					? servicesRaw
+					: ((servicesRaw as any).data || (servicesRaw as any).services || []);
 
 				const options: INodePropertyOptions[] = [];
 
@@ -815,11 +819,14 @@ export class X402Bazaar implements INodeType {
 				else if (operation === 'listServices') {
 					const categoryFilter = this.getNodeParameter('categoryFilter', i, '') as string;
 
-					const services = (await this.helpers.httpRequest({
+					const listRaw = (await this.helpers.httpRequest({
 						method: 'GET',
 						url: `${baseUrl}/api/services`,
 						json: true,
-					})) as Array<Record<string, unknown>>;
+					})) as unknown;
+					const services: Array<Record<string, unknown>> = Array.isArray(listRaw)
+						? listRaw
+						: ((listRaw as any).data || (listRaw as any).services || []);
 
 					let filtered = services;
 					if (categoryFilter) {
@@ -878,11 +885,14 @@ export class X402Bazaar implements INodeType {
 					const serviceRaw = this.getNodeParameter('serviceInfoPath', i) as string;
 					const svcMeta: ServiceMeta = JSON.parse(serviceRaw);
 
-					const services = (await this.helpers.httpRequest({
+					const infoRaw = (await this.helpers.httpRequest({
 						method: 'GET',
 						url: `${baseUrl}/api/services`,
 						json: true,
-					})) as Array<Record<string, unknown>>;
+					})) as unknown;
+					const services: Array<Record<string, unknown>> = Array.isArray(infoRaw)
+						? infoRaw
+						: ((infoRaw as any).data || (infoRaw as any).services || []);
 
 					const found = services.find(
 						(s) => s.url === svcMeta.url || s.name === svcMeta.name,
