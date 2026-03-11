@@ -34,6 +34,8 @@ Then restart n8n.
 5. Click **Test** to verify connectivity
 
 > You need USDC on Base or SKALE on Base in your wallet to pay for API calls. Most APIs cost 0.001–0.05 USDC per call.
+>
+> **Need USDC?** Bridge from any chain (ETH, Polygon, Arbitrum, Optimism) → SKALE in 1 click: [x402bazaar.org/fund](https://x402bazaar.org/fund)
 
 ## Operations
 
