@@ -16,7 +16,7 @@ import {
 	type Address,
 	type Hash,
 } from 'viem';
-import { base } from 'viem/chains';
+import { base, polygon } from 'viem/chains';
 import { privateKeyToAccount } from 'viem/accounts';
 
 // ─── Chain Configuration ────────────────────────────────────────────────────
@@ -26,6 +26,8 @@ interface ChainConfig {
 	usdcContract: Address;
 	explorer: string;
 	viemChain: object;
+	decimals: number;
+	displayName: string;
 }
 
 const CHAINS: Record<string, ChainConfig> = {
@@ -34,6 +36,8 @@ const CHAINS: Record<string, ChainConfig> = {
 		usdcContract: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
 		explorer: 'https://basescan.org',
 		viemChain: base,
+		decimals: 6,
+		displayName: 'Base',
 	},
 	skale: {
 		rpcUrl: 'https://skale-base.skalenodes.com/v1/base',
@@ -49,6 +53,16 @@ const CHAINS: Record<string, ChainConfig> = {
 				},
 			},
 		},
+		decimals: 18,
+		displayName: 'SKALE on Base',
+	},
+	polygon: {
+		rpcUrl: 'https://polygon-bor-rpc.publicnode.com',
+		usdcContract: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359' as `0x${string}`,
+		explorer: 'https://polygonscan.com',
+		viemChain: polygon,
+		decimals: 6,
+		displayName: 'Polygon',
 	},
 };
 
@@ -106,8 +120,9 @@ async function _sendUsdcRaw(
 	});
 
 	if (balance < amountRaw) {
+		const divisor = 10 ** chainCfg.decimals;
 		throw new Error(
-			`Insufficient USDC balance: ${(Number(balance) / 1e6).toFixed(4)} available, ${(Number(amountRaw) / 1e6).toFixed(4)} required`,
+			`Insufficient USDC balance: ${(Number(balance) / divisor).toFixed(4)} available, ${(Number(amountRaw) / divisor).toFixed(4)} required`,
 		);
 	}
 
@@ -141,7 +156,7 @@ async function sendUsdcPayment(
 	amountUsdc: number,
 ): Promise<{ txHash: Hash; explorer: string; from: string }> {
 	const chainCfg = CHAINS[network] || CHAINS.base;
-	const amountRaw = parseUnits(amountUsdc.toString(), 6);
+	const amountRaw = parseUnits(amountUsdc.toString(), chainCfg.decimals);
 	return _sendUsdcRaw(privateKey, chainCfg, recipient, amountRaw);
 }
 
@@ -179,8 +194,8 @@ async function sendSplitPayment(
 ): Promise<SplitPaymentResult> {
 	const chainCfg = CHAINS[network] || CHAINS.base;
 
-	// Integer arithmetic in micro-USDC (6 decimals) mirrors the server-side formula
-	const totalRaw = parseUnits(totalAmountUsdc.toString(), 6);
+	// Integer arithmetic using chain-specific decimals (6 for Base/Polygon, 18 for SKALE)
+	const totalRaw = parseUnits(totalAmountUsdc.toString(), chainCfg.decimals);
 	const providerRaw = (totalRaw * 95n) / 100n;
 	const platformRaw = totalRaw - providerRaw;
 
@@ -197,14 +212,15 @@ async function sendSplitPayment(
 	// Tx2: 5% to platform
 	const platformResult = await _sendUsdcRaw(privateKey, chainCfg, platformRecipient, platformRaw);
 
+	const divisor = 10 ** chainCfg.decimals;
 	return {
 		txHashProvider: providerResult.txHash,
 		txHashPlatform: platformResult.txHash,
 		explorerProvider: providerResult.explorer,
 		explorerPlatform: platformResult.explorer,
 		from: providerResult.from,
-		providerAmountUsdc: Number(providerRaw) / 1e6,
-		platformAmountUsdc: Number(platformRaw) / 1e6,
+		providerAmountUsdc: Number(providerRaw) / divisor,
+		platformAmountUsdc: Number(platformRaw) / divisor,
 	};
 }
 
@@ -228,9 +244,9 @@ async function getUsdcBalance(
 	});
 
 	return {
-		balance: Number(balance) / 1e6,
+		balance: Number(balance) / (10 ** chainCfg.decimals),
 		address: account.address,
-		network: chainCfg === CHAINS.skale ? 'SKALE on Base' : 'Base',
+		network: chainCfg.displayName,
 	};
 }
 
@@ -264,7 +280,7 @@ export class X402Bazaar implements INodeType {
 		version: 1,
 		subtitle: '={{$parameter["operation"]}}',
 		description:
-			'Access 70+ APIs from the x402 Bazaar marketplace with automatic USDC payments on Base or SKALE',
+			'Access 70+ APIs from the x402 Bazaar marketplace with automatic USDC payments on Base, SKALE or Polygon',
 		defaults: {
 			name: 'x402 Bazaar',
 		},

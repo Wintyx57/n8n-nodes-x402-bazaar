@@ -19,7 +19,7 @@ export class X402BazaarCredentials implements ICredentialType {
 			required: true,
 			placeholder: '0xabc123...',
 			description:
-				'Your wallet private key (hex, 0x-prefixed) for signing USDC payments on-chain. Never sent to x402 servers — only used locally to sign transactions.',
+				'Your wallet private key (hex, 0x-prefixed) for signing USDC payments on-chain. Never sent to x402 servers \u2014 only used locally to sign transactions.',
 		},
 		{
 			displayName: 'Network',
@@ -29,12 +29,17 @@ export class X402BazaarCredentials implements ICredentialType {
 				{
 					name: 'Base (Mainnet)',
 					value: 'base',
-					description: 'Base L2 — ~$0.001 gas per transaction',
+					description: 'Base L2 \u2014 ~$0.001 gas per transaction',
 				},
 				{
 					name: 'SKALE on Base (Ultra-low Gas)',
 					value: 'skale',
-					description: 'SKALE on Base — ultra-low gas fees (~$0.0007/tx via CREDITS)',
+					description: 'SKALE on Base \u2014 ultra-low gas fees (~$0.0007/tx via CREDITS)',
+				},
+				{
+					name: 'Polygon (Mainnet)',
+					value: 'polygon',
+					description: 'Polygon PoS \u2014 ~$0.001-0.005 gas per transaction via MATIC',
 				},
 			],
 			default: 'base',
