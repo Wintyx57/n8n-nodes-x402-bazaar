@@ -2,7 +2,7 @@
 
 **n8n community node for [x402 Bazaar](https://x402bazaar.org)** — the autonomous API marketplace where AI agents pay per-call with USDC.
 
-Access **71+ APIs** directly from your n8n workflows with automatic on-chain USDC payments on **Base** or **SKALE on Base** (ultra-low gas).
+Access **74+ APIs** directly from your n8n workflows with automatic on-chain USDC payments on **Base**, **SKALE on Base** (ultra-low gas), or **Polygon**.
 
 [![npm](https://img.shields.io/npm/v/@wintyx/n8n-nodes-x402-bazaar)](https://www.npmjs.com/package/@wintyx/n8n-nodes-x402-bazaar)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -29,7 +29,7 @@ Then restart n8n.
 
 1. Create new **x402 Bazaar** credentials in n8n
 2. Enter your **wallet private key** (hex, 0x-prefixed) — used locally to sign USDC payments, never sent to any server
-3. Choose your **network**: Base (mainnet) or SKALE on Base (ultra-low gas)
+3. Choose your **network**: Base (mainnet), SKALE on Base (ultra-low gas), or Polygon
 4. Set a **max budget** (USDC) as a safety cap per workflow execution
 5. Click **Test** to verify connectivity
 
