@@ -793,7 +793,7 @@ export class X402Bazaar implements INodeType {
 							};
 						}
 
-						if (paidResponse.statusCode !== 200) {
+						if (paidResponse.statusCode < 200 || paidResponse.statusCode > 299) {
 							const txRef = isSplitMode
 								? `provider_tx: ${paymentMeta.txHashProvider as string}`
 								: `tx: ${paymentMeta.txHash as string}`;
@@ -811,7 +811,7 @@ export class X402Bazaar implements INodeType {
 							},
 							pairedItem: { item: i },
 						});
-					} else if (initialResponse.statusCode === 200) {
+					} else if (initialResponse.statusCode >= 200 && initialResponse.statusCode <= 299) {
 						// Free endpoint
 						returnData.push({
 							json: {
@@ -1039,7 +1039,7 @@ export class X402Bazaar implements INodeType {
 							ignoreHttpStatusErrors: true,
 						})) as { statusCode: number; body: Record<string, unknown> };
 
-						if (paidRes.statusCode === 201 || paidRes.statusCode === 200) {
+						if (paidRes.statusCode >= 200 && paidRes.statusCode <= 299) {
 							returnData.push({
 								json: {
 									...(paidRes.body as Record<string, unknown>),
@@ -1071,7 +1071,7 @@ export class X402Bazaar implements INodeType {
 							`Validation error: ${JSON.stringify(initialRes.body)}`,
 							{ itemIndex: i },
 						);
-					} else if (initialRes.statusCode === 201 || initialRes.statusCode === 200) {
+					} else if (initialRes.statusCode >= 200 && initialRes.statusCode <= 299) {
 						// Registration without payment (unlikely but handle gracefully)
 						returnData.push({
 							json: initialRes.body as Record<string, unknown>,
