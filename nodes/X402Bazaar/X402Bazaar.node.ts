@@ -53,7 +53,7 @@ const CHAINS: Record<string, ChainConfig> = {
 				},
 			},
 		},
-		decimals: 18,
+		decimals: 6,
 		displayName: 'SKALE on Base',
 	},
 	polygon: {
